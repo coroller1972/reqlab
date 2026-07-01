@@ -11,10 +11,12 @@ import {
 import { HEADER_NAME_SUGGESTIONS, getHeaderValueSuggestions } from "./headerSuggestions.js";
 import {
   clearRequests,
+  loadEnvironmentVariables,
   loadProxyToken,
   loadRequests,
   loadTheme,
   loadTransportMode,
+  saveEnvironmentVariables,
   saveProxyToken,
   saveRequests,
   saveTheme,
@@ -33,6 +35,33 @@ const blankRequest = () => ({
   lastResponseSummary: null
 });
 
+const blankEnvironmentVariable = () => ({
+  id: crypto.randomUUID(),
+  key: "",
+  value: ""
+});
+
+const VARIABLE_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+
+function buildEnvironmentMap(variables) {
+  return variables.reduce((map, variable) => {
+    const key = variable.key.trim();
+    if (key) map.set(key, variable.value);
+    return map;
+  }, new Map());
+}
+
+function resolveEnvironmentVariables(value, variablesMap, missingVariables) {
+  return value.replace(VARIABLE_PATTERN, (placeholder, key) => {
+    if (!variablesMap.has(key)) {
+      missingVariables.add(key);
+      return placeholder;
+    }
+
+    return variablesMap.get(key);
+  });
+}
+
 function App() {
   const [requests, setRequests] = useState(() => loadRequests());
   const [activeRequest, setActiveRequest] = useState(() => blankRequest());
@@ -46,6 +75,10 @@ function App() {
   const [theme, setTheme] = useState(() => loadTheme());
   const [transportMode, setTransportMode] = useState(() => loadTransportMode());
   const [proxyToken, setProxyToken] = useState(() => loadProxyToken());
+  const [environmentVariables, setEnvironmentVariables] = useState(() => {
+    const storedVariables = loadEnvironmentVariables();
+    return storedVariables.length ? storedVariables : [blankEnvironmentVariable()];
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -64,6 +97,10 @@ function App() {
   useEffect(() => {
     saveProxyToken(proxyToken);
   }, [proxyToken]);
+
+  useEffect(() => {
+    saveEnvironmentVariables(environmentVariables);
+  }, [environmentVariables]);
 
   const responseBody = useMemo(() => {
     if (!response?.body) return "";
@@ -94,6 +131,23 @@ function App() {
     const nextHeaders = activeRequest.headers.filter((header) => header.id !== id);
     updateActive({
       headers: nextHeaders.length ? nextHeaders : [{ id: crypto.randomUUID(), key: "", value: "" }]
+    });
+  };
+
+  const updateEnvironmentVariable = (id, patch) => {
+    setEnvironmentVariables((current) =>
+      current.map((variable) => (variable.id === id ? { ...variable, ...patch } : variable))
+    );
+  };
+
+  const addEnvironmentVariable = () => {
+    setEnvironmentVariables((current) => [...current, blankEnvironmentVariable()]);
+  };
+
+  const removeEnvironmentVariable = (id) => {
+    setEnvironmentVariables((current) => {
+      const nextVariables = current.filter((variable) => variable.id !== id);
+      return nextVariables.length ? nextVariables : [blankEnvironmentVariable()];
     });
   };
 
@@ -205,8 +259,24 @@ function App() {
       return;
     }
 
+    const variablesMap = buildEnvironmentMap(environmentVariables);
+    const missingVariables = new Set();
+    const resolvedUrl = resolveEnvironmentVariables(activeRequest.url, variablesMap, missingVariables);
+    const resolvedHeaders = Object.fromEntries(
+      Object.entries(headerRowsToObject(activeRequest.headers)).map(([key, value]) => [
+        key,
+        resolveEnvironmentVariables(value, variablesMap, missingVariables)
+      ])
+    );
+    const resolvedBody = resolveEnvironmentVariables(activeRequest.body, variablesMap, missingVariables);
+
+    if (missingVariables.size) {
+      setError(`Variable manquante : ${Array.from(missingVariables).join(", ")}.`);
+      return;
+    }
+
     try {
-      new URL(activeRequest.url);
+      new URL(resolvedUrl);
     } catch {
       setError("L'URL doit etre complete, par exemple https://api.example.com/users.");
       return;
@@ -216,9 +286,9 @@ function App() {
     try {
       const requestPayload = {
         method: activeRequest.method,
-        url: activeRequest.url,
-        headers: headerRowsToObject(activeRequest.headers),
-        body: activeRequest.body
+        url: resolvedUrl,
+        headers: resolvedHeaders,
+        body: resolvedBody
       };
       const result =
         transportMode === "proxy"
@@ -407,6 +477,47 @@ function App() {
                 Ce token reste dans le localStorage de ce navigateur et est envoye uniquement en mode Proxy via le header
                 <code>X-ReqLab-Proxy-Token</code>.
               </p>
+
+              <div className="settings-section">
+                <div className="settings-section-header">
+                  <div>
+                    <h3>Variables d'environnement</h3>
+                    <p>Utilise la syntaxe ${"{NOM_VARIABLE}"} dans l'URL, les headers ou le body.</p>
+                  </div>
+                  <button type="button" onClick={addEnvironmentVariable}>
+                    Ajouter
+                  </button>
+                </div>
+
+                <div className="environment-editor">
+                  {environmentVariables.map((variable) => (
+                    <div className="environment-row" key={variable.id}>
+                      <input
+                        placeholder="BEARER_TOKEN"
+                        value={variable.key}
+                        onChange={(event) => updateEnvironmentVariable(variable.id, { key: event.target.value })}
+                      />
+                      <input
+                        placeholder="Valeur"
+                        value={variable.value}
+                        onChange={(event) => updateEnvironmentVariable(variable.id, { value: event.target.value })}
+                      />
+                      <button
+                        type="button"
+                        aria-label="Supprimer la variable"
+                        onClick={() => removeEnvironmentVariable(variable.id)}
+                      >
+                        X
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="settings-help">
+                  Exemple : <code>Authorization: Bearer ${"{BEARER_TOKEN}"}</code>. Les variables restent locales a ce
+                  navigateur et ne sont injectees qu'au moment de l'envoi.
+                </p>
+              </div>
             </section>
           </div>
         )}

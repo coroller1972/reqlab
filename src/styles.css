@@ -381,7 +381,9 @@ textarea:focus {
 }
 
 .settings-modal {
-  width: min(520px, 100%);
+  width: min(680px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
@@ -439,6 +441,57 @@ textarea:focus {
   background: var(--panel-soft);
   padding: 1px 5px;
   color: var(--ink);
+}
+
+.settings-section {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+.settings-section-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-section-header h3,
+.settings-section-header p {
+  margin: 0;
+}
+
+.settings-section-header h3 {
+  font-size: 15px;
+}
+
+.settings-section-header p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.environment-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.environment-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr) 42px;
+  gap: 8px;
+}
+
+.environment-row input {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.environment-row button {
+  padding: 0;
 }
 
 .topbar label {
@@ -762,7 +815,17 @@ textarea,
     grid-template-columns: 1fr;
   }
 
-  .header-row button {
+  .settings-section-header,
+  .environment-row {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-section-header {
+    display: grid;
+  }
+
+  .header-row button,
+  .environment-row button {
     width: 100%;
   }
 

@@ -34,6 +34,7 @@ ReqLab est une SPA React qui permet de composer, envoyer, sauvegarder et rejouer
 - Theme clair/sombre persistant
 - Interface responsive
 - Icône et branding ReqLab integres
+- Variables d'environnement locales utilisables dans l'URL, les headers et le body avec `${VARIABLE}`
 
 ## CORS et mode proxy
 
@@ -184,6 +185,32 @@ Le mode de transport et le token proxy local sont stockes avec :
 reqlab.transportMode.v1
 reqlab.proxyToken.v1
 ```
+
+Les variables d'environnement locales sont stockees avec :
+
+```text
+reqlab.environmentVariables.v1
+```
+
+## Variables d'environnement locales
+
+Dans ReqLab, ouvre la configuration via l'icone roue dentee, puis ajoute des variables d'environnement locales.
+
+Elles peuvent etre utilisees dans :
+
+- l'URL
+- les valeurs de headers
+- le body
+
+Exemple :
+
+```text
+Authorization: Bearer ${BEARER_TOKEN}
+```
+
+Au moment de l'envoi, ReqLab remplace `${BEARER_TOKEN}` par la valeur sauvegardee localement. La requete sauvegardee conserve le placeholder, ce qui permet de changer la valeur de la variable sans modifier chaque requete.
+
+Si une variable referencee n'existe pas, ReqLab bloque l'envoi et affiche la variable manquante.
 
 Le projet conserve aussi une compatibilite de migration avec les anciennes cles :
 

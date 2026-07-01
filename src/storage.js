@@ -2,6 +2,7 @@ export const STORAGE_KEY = "reqlab.requests.v1";
 export const THEME_KEY = "reqlab.theme.v1";
 export const TRANSPORT_MODE_KEY = "reqlab.transportMode.v1";
 export const PROXY_TOKEN_KEY = "reqlab.proxyToken.v1";
+export const ENVIRONMENT_VARIABLES_KEY = "reqlab.environmentVariables.v1";
 
 const LEGACY_STORAGE_KEY = "requesty.requests.v1";
 const LEGACY_THEME_KEY = "requesty.theme.v1";
@@ -54,5 +55,38 @@ export function saveProxyToken(token) {
     localStorage.setItem(PROXY_TOKEN_KEY, token);
   } else {
     localStorage.removeItem(PROXY_TOKEN_KEY);
+  }
+}
+
+export function loadEnvironmentVariables() {
+  try {
+    const raw = localStorage.getItem(ENVIRONMENT_VARIABLES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map((variable) => ({
+      id: variable.id || crypto.randomUUID(),
+      key: variable.key || "",
+      value: variable.value || ""
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function saveEnvironmentVariables(variables) {
+  const normalized = variables
+    .map((variable) => ({
+      id: variable.id,
+      key: variable.key.trim(),
+      value: variable.value
+    }))
+    .filter((variable) => variable.key);
+
+  if (normalized.length) {
+    localStorage.setItem(ENVIRONMENT_VARIABLES_KEY, JSON.stringify(normalized));
+  } else {
+    localStorage.removeItem(ENVIRONMENT_VARIABLES_KEY);
   }
 }
