@@ -47,8 +47,9 @@ Dans ce cas, ReqLab peut utiliser le mode `Proxy`. Le frontend appelle `/api/pro
 Le proxy inclut des garde-fous :
 
 - methodes autorisees limitees aux methodes HTTP usuelles
-- blocage des URLs locales ou privees (`localhost`, `127.0.0.1`, reseaux prives)
+- blocage des URLs locales ou privees (`localhost`, `127.0.0.1`, reseaux prives), desactivable en local via `REQLAB_ALLOW_PRIVATE_NETWORK`
 - resolution DNS et blocage des IPs privees
+- redirections suivies manuellement (5 maximum), chaque URL cible etant reverifiee ; `Authorization` et `Cookie` sont retires lors d'une redirection vers une autre origine
 - timeout de 20 secondes
 - taille de payload limitee
 - filtrage de headers sensibles ou hop-by-hop
@@ -121,6 +122,23 @@ Tu peux aussi restreindre l'origine autorisee :
 ```text
 REQLAB_ALLOWED_ORIGIN=https://ton-domaine.vercel.app
 ```
+
+### Appeler une API locale via le proxy
+
+Par defaut, le proxy bloque `localhost` et les reseaux prives. Pour tester une API locale qui n'autorise pas CORS, lance ReqLab avec `npm run dev:vercel` et ajoute dans un fichier `.env.local` (ignore par git) :
+
+```text
+REQLAB_ALLOW_PRIVATE_NETWORK=true
+REQLAB_PROXY_TOKEN=une-valeur-longue-et-secrete
+```
+
+Garde-fous quand cette option est active :
+
+- elle est ignoree sur les deploiements Vercel (`VERCEL_ENV` = `preview` ou `production`)
+- `REQLAB_PROXY_TOKEN` est obligatoire, sinon le proxy refuse toutes les requetes
+- le proxy ne renvoie plus l'origine de l'appelant en CORS : seuls les appels depuis la meme origine (ou `REQLAB_ALLOWED_ORIGIN`) passent
+
+Ne definis jamais `REQLAB_ALLOW_PRIVATE_NETWORK` dans les variables d'environnement du projet Vercel.
 
 ## Build de production
 

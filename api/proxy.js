@@ -3,6 +3,10 @@ import net from "node:net";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const TIMEOUT_MS = 20000;
+const MAX_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const CROSS_ORIGIN_STRIPPED_HEADERS = new Set(["authorization", "cookie"]);
+const BODY_HEADERS = new Set(["content-type", "content-encoding", "content-language", "content-location"]);
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 const BLOCKED_REQUEST_HEADERS = new Set([
   "accept-encoding",
@@ -32,6 +36,11 @@ export default async function handler(req, res) {
     return sendError(res, 405, "Method not allowed");
   }
 
+  const allowPrivateNetwork = isPrivateNetworkAllowed();
+  if (allowPrivateNetwork && !process.env.REQLAB_PROXY_TOKEN) {
+    return sendError(res, 500, "REQLAB_PROXY_TOKEN est requis quand REQLAB_ALLOW_PRIVATE_NETWORK est actif.");
+  }
+
   if (!isAuthorized(req)) {
     return sendError(res, 401, "Proxy token invalide ou manquant.");
   }
@@ -45,7 +54,7 @@ export default async function handler(req, res) {
       return sendError(res, 400, "Methode HTTP non supportee.");
     }
 
-    await assertSafeTargetUrl(targetUrl);
+    await assertSafeTargetUrl(targetUrl, { allowPrivateNetwork });
 
     const body = typeof payload.body === "string" ? payload.body : "";
     const headers = sanitizeHeaders(payload.headers);
@@ -54,12 +63,12 @@ export default async function handler(req, res) {
     const startedAt = Date.now();
 
     try {
-      const upstream = await fetch(targetUrl, {
+      const upstream = await fetchWithSafeRedirects(targetUrl, {
         method,
         headers,
-        body: ["GET", "HEAD"].includes(method) ? undefined : body,
-        redirect: "follow",
-        signal: controller.signal
+        body,
+        signal: controller.signal,
+        allowPrivateNetwork
       });
       const responseBody = method === "HEAD" ? "" : await upstream.text();
       const responseHeaders = Object.fromEntries(upstream.headers.entries());
@@ -88,10 +97,21 @@ export default async function handler(req, res) {
 function setCorsHeaders(req, res) {
   const allowedOrigin = process.env.REQLAB_ALLOWED_ORIGIN;
   const requestOrigin = req.headers.origin;
-  res.setHeader("Access-Control-Allow-Origin", allowedOrigin || requestOrigin || "*");
+  const fallbackOrigin = isPrivateNetworkAllowed() ? null : requestOrigin || "*";
+  const corsOrigin = allowedOrigin || fallbackOrigin;
+  if (corsOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+  }
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-ReqLab-Proxy-Token");
   res.setHeader("Vary", "Origin");
+}
+
+// Option reservee au developpement local : ignoree sur les deploiements Vercel (preview et production).
+function isPrivateNetworkAllowed() {
+  if (process.env.REQLAB_ALLOW_PRIVATE_NETWORK !== "true") return false;
+  const vercelEnv = process.env.VERCEL_ENV;
+  return !vercelEnv || vercelEnv === "development";
 }
 
 function isAuthorized(req) {
@@ -120,7 +140,7 @@ async function readJsonBody(req) {
   return rawBody ? JSON.parse(rawBody) : {};
 }
 
-async function assertSafeTargetUrl(targetUrl) {
+async function assertSafeTargetUrl(targetUrl, { allowPrivateNetwork = false } = {}) {
   if (!["http:", "https:"].includes(targetUrl.protocol)) {
     const error = new Error("Seules les URLs http et https sont autorisees.");
     error.statusCode = 400;
@@ -132,6 +152,8 @@ async function assertSafeTargetUrl(targetUrl) {
     error.statusCode = 400;
     throw error;
   }
+
+  if (allowPrivateNetwork) return;
 
   const hostname = targetUrl.hostname.toLowerCase();
   if (isBlockedHostname(hostname)) {
@@ -146,6 +168,61 @@ async function assertSafeTargetUrl(targetUrl) {
     error.statusCode = 400;
     throw error;
   }
+}
+
+async function fetchWithSafeRedirects(targetUrl, { method, headers, body, signal, allowPrivateNetwork }) {
+  let currentUrl = targetUrl;
+  let currentMethod = method;
+  let currentHeaders = headers;
+  let currentBody = body;
+
+  for (let redirectCount = 0; ; redirectCount++) {
+    const response = await fetch(currentUrl, {
+      method: currentMethod,
+      headers: currentHeaders,
+      body: ["GET", "HEAD"].includes(currentMethod) ? undefined : currentBody,
+      redirect: "manual",
+      signal
+    });
+
+    const location = response.headers.get("location");
+    if (!REDIRECT_STATUSES.has(response.status) || !location) return response;
+
+    await response.body?.cancel();
+
+    if (redirectCount >= MAX_REDIRECTS) {
+      const error = new Error(`Trop de redirections (maximum ${MAX_REDIRECTS}).`);
+      error.statusCode = 502;
+      throw error;
+    }
+
+    const nextUrl = new URL(location, currentUrl);
+    try {
+      await assertSafeTargetUrl(nextUrl, { allowPrivateNetwork });
+    } catch (error) {
+      error.message = `Redirection vers ${nextUrl.href} refusee : ${error.message}`;
+      throw error;
+    }
+
+    const switchesToGet =
+      (response.status === 303 && !["GET", "HEAD"].includes(currentMethod)) ||
+      ([301, 302].includes(response.status) && currentMethod === "POST");
+    if (switchesToGet) {
+      currentMethod = "GET";
+      currentBody = "";
+      currentHeaders = omitHeaders(currentHeaders, BODY_HEADERS);
+    }
+
+    if (nextUrl.origin !== currentUrl.origin) {
+      currentHeaders = omitHeaders(currentHeaders, CROSS_ORIGIN_STRIPPED_HEADERS);
+    }
+
+    currentUrl = nextUrl;
+  }
+}
+
+function omitHeaders(headers, names) {
+  return Object.fromEntries(Object.entries(headers).filter(([key]) => !names.has(key.toLowerCase())));
 }
 
 function isBlockedHostname(hostname) {
