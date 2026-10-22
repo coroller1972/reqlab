@@ -342,6 +342,7 @@ function App() {
 
         <div className="sidebar-actions">
           <button type="button" className="primary subtle" onClick={newRequest}>
+            <PlusIcon />
             Nouvelle
           </button>
           <button type="button" onClick={saveActiveRequest}>
@@ -360,7 +361,7 @@ function App() {
         </div>
 
         <div className="request-list-header">
-          <span>Requetes</span>
+          <span>Requêtes</span>
           <strong>{requests.length}</strong>
         </div>
 
@@ -377,7 +378,11 @@ function App() {
               >
                 <span className={`method method-${request.method.toLowerCase()}`}>{request.method}</span>
                 <span className="request-name">{request.name}</span>
-                {request.lastResponseSummary && <span className="request-status">{request.lastResponseSummary.status}</span>}
+                {request.lastResponseSummary && (
+                  <span className="request-status" data-tone={statusTone(request.lastResponseSummary.status)}>
+                    {request.lastResponseSummary.status}
+                  </span>
+                )}
                 <span
                   role="button"
                   tabIndex="0"
@@ -438,8 +443,8 @@ function App() {
             >
               {theme === "dark" ? <SunIcon /> : <MoonIcon />}
             </button>
-            <div className="topbar-meta">
-              <span>{selectedId ? "Sauvegardee" : "Brouillon"}</span>
+            <div className={`topbar-meta ${selectedId ? "is-saved" : "is-draft"}`}>
+              <span>{selectedId ? "Sauvegardée" : "Brouillon"}</span>
             </div>
           </div>
         </header>
@@ -507,7 +512,7 @@ function App() {
                         aria-label="Supprimer la variable"
                         onClick={() => removeEnvironmentVariable(variable.id)}
                       >
-                        X
+                        <CloseIcon />
                       </button>
                     </div>
                   ))}
@@ -523,7 +528,12 @@ function App() {
         )}
 
         <section className="request-line" aria-label="Compositeur de requete">
-          <select value={activeRequest.method} onChange={(event) => updateActive({ method: event.target.value })}>
+          <select
+            aria-label="Méthode HTTP"
+            className={`method-select method-${activeRequest.method.toLowerCase()}`}
+            value={activeRequest.method}
+            onChange={(event) => updateActive({ method: event.target.value })}
+          >
             {HTTP_METHODS.map((method) => (
               <option key={method} value={method}>
                 {method}
@@ -533,11 +543,18 @@ function App() {
           <input
             className="url-input"
             type="url"
+            aria-label="URL"
+            spellCheck="false"
             placeholder="https://api.example.com/resource"
             value={activeRequest.url}
             onChange={(event) => updateActive({ url: event.target.value })}
           />
-          <button type="button" className="primary send-button" onClick={sendRequest} disabled={isSending}>
+          <button
+            type="button"
+            className={`primary send-button ${isSending ? "is-sending" : ""}`}
+            onClick={sendRequest}
+            disabled={isSending}
+          >
             {isSending ? "Envoi..." : "Envoyer"}
           </button>
         </section>
@@ -560,12 +577,16 @@ function App() {
           </span>
         </section>
 
-        {error && <div className="error-banner">{error}</div>}
+        {error && (
+          <div className="error-banner" role="alert">
+            {error}
+          </div>
+        )}
 
         <section className="panels">
           <article className="panel">
             <div className="panel-header">
-              <h2>Requete</h2>
+              <h2>Requête</h2>
               <div className="tabs">
                 <button type="button" className={requestTab === "headers" ? "active" : ""} onClick={() => setRequestTab("headers")}>
                   Headers
@@ -603,11 +624,12 @@ function App() {
                       onChange={(event) => updateHeader(header.id, { value: event.target.value })}
                     />
                     <button type="button" aria-label="Supprimer le header" onClick={() => removeHeader(header.id)}>
-                      X
+                      <CloseIcon />
                     </button>
                   </div>
                 ))}
                 <button type="button" className="add-row" onClick={addHeader}>
+                  <PlusIcon />
                   Ajouter un header
                 </button>
               </div>
@@ -631,7 +653,7 @@ function App() {
 
           <article className="panel response-panel">
             <div className="panel-header">
-              <h2>Reponse</h2>
+              <h2>Réponse</h2>
               <label className="pretty-toggle">
                 <input type="checkbox" checked={prettyJson} onChange={(event) => setPrettyJson(event.target.checked)} />
                 Pretty JSON
@@ -653,7 +675,7 @@ function App() {
               </button>
             </div>
 
-            <pre className="response-output">
+            <pre className={`response-output ${response ? "" : "is-empty"}`}>
               {response
                 ? responseTab === "body"
                   ? responseBody || "(reponse vide)"
@@ -673,6 +695,21 @@ function Metric({ label, value, tone = "" }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function statusTone(status) {
+  if (status >= 500) return "error";
+  if (status >= 400) return "warn";
+  if (status >= 300) return "info";
+  return "good";
+}
+
+function PlusIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="theme-icon">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
   );
 }
 
